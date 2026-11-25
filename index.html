@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111211">
+  <meta name="description" content="Piano online 88 tuts dengan sampel grand piano Yamaha C5 yang realistis, sustain pedal, dan kontrol keyboard.">
+  <title>GRAND / 88 — Piano Online dengan Suara Grand Piano Nyata</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#piano">Lewati ke piano</a>
+
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">88</span>
+        <div>
+          <p class="brand-name">GRAND / 88</p>
+          <p class="brand-sub">Salamander Grand Piano · Web Audio</p>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <div id="status" class="status" role="status" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="statusText">Menyiapkan audio…</span>
+          <span class="status-bar" aria-hidden="true"><i id="loadBar"></i></span>
+          <button id="retryBtn" class="retry-btn" type="button" hidden>Coba lagi</button>
+        </div>
+        <button id="helpBtn" class="icon-btn" type="button" aria-expanded="false" aria-controls="helpPanel" aria-label="Tampilkan panduan keyboard"></button>
+      </div>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="pageTitle">
+        <p class="eyebrow">Instrumen · 01</p>
+        <h1 id="pageTitle">Grand piano, langsung di browser.</h1>
+        <p class="lede">Delapan puluh delapan tuts dari A0 sampai C8, memakai rekaman grand piano Yamaha C5. Tanpa install, tanpa library audio.</p>
+      </section>
+
+      <section id="helpPanel" class="help-panel" hidden aria-labelledby="helpHeading">
+        <div>
+          <h2 id="helpHeading">Peta keyboard</h2>
+          <p><kbd>Q</kbd> adalah tuts putih paling kiri, berurutan ke kanan sampai <kbd>M</kbd>. Tahan <kbd>Shift</kbd> + huruf yang sama untuk tuts hitam di sebelahnya.</p>
+          <div class="keymap">
+            <div class="keymap-row">
+              <span class="keymap-label">Putih</span>
+              <span><kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd><kbd>R</kbd><kbd>T</kbd><kbd>Y</kbd><kbd>U</kbd><kbd>I</kbd><kbd>O</kbd><kbd>P</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd><kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd><kbd>B</kbd><kbd>N</kbd><kbd>M</kbd></span>
+            </div>
+            <div class="keymap-row">
+              <span class="keymap-label">Hitam</span>
+              <span><kbd>Shift</kbd> + <kbd>Q</kbd> … <kbd>M</kbd> (huruf yang sama)</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h2>Kontrol lain</h2>
+          <ul class="help-list">
+            <li><kbd>Space</kbd> Sustain pedal</li>
+            <li><kbd>`</kbd> Tampilkan / sembunyikan label not</li>
+            <li><kbd>−</kbd> / <kbd>=</kbd> Geser peta keyboard satu oktaf</li>
+            <li><kbd>←</kbd> / <kbd>→</kbd> Pindah tuts saat area piano fokus, <kbd>Enter</kbd> memainkannya</li>
+          </ul>
+          <p class="help-note">Teklik bagian tengah tuts lebih pelan, dekat ujung bawah lebih keras.</p>
+        </div>
+      </section>
+
+      <section class="control-bar" aria-labelledby="controlsHeading">
+        <h2 id="controlsHeading" class="sr-only">Kontrol piano</h2>
+        <div class="control-group">
+          <span id="viewLabel" class="control-label">Tampilan</span>
+          <div class="segmented" role="group" aria-labelledby="viewLabel">
+            <button type="button" data-view="88" aria-pressed="true">88</button>
+            <button type="button" data-view="24" aria-pressed="false">24</button>
+            <button type="button" data-view="12" aria-pressed="false">12</button>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <span class="control-label">Peta keyboard</span>
+          <div class="stepper">
+            <button id="octDown" type="button" data-icon="−" aria-label="Turunkan oktaf keyboard"></button>
+            <output id="octLabel" aria-live="polite">C3–G6</output>
+            <button id="octUp" type="button" data-icon="+" aria-label="Naikkan oktaf keyboard"></button>
+          </div>
+        </div>
+
+        <label class="switch">
+          <input id="labelToggle" type="checkbox" checked>
+          <span class="switch-ui" aria-hidden="true"></span>
+          <span>Label not</span>
+        </label>
+
+        <label class="switch">
+          <input id="reverbToggle" type="checkbox" checked>
+          <span class="switch-ui" aria-hidden="true"></span>
+          <span>Reverb</span>
+        </label>
+
+        <div class="control-group volume-group">
+          <label class="control-label" for="volume">Volume</label>
+          <input id="volume" type="range" min="0" max="100" value="78" aria-label="Volume">
+        </div>
+
+        <div class="control-actions">
+          <button id="demoBtn" class="btn btn-ghost" type="button">Putar demo</button>
+          <button id="pedalBtn" class="btn btn-pedal" type="button" aria-pressed="false">
+            <span class="pedal-led" aria-hidden="true"></span>
+            Sustain <kbd>Space</kbd>
+          </button>
+        </div>
+      </section>
+
+      <section id="piano" class="piano-section" aria-labelledby="pianoHeading">
+        <h2 id="pianoHeading" class="sr-only">Piano 88 tuts</h2>
+
+        <div class="piano-case">
+          <div class="case-top" aria-hidden="true">
+            <span class="case-brand">GRAND <em>88</em></span>
+            <span class="case-meta">SALAMANDER · YAMAHA C5</span>
+          </div>
+          <div class="felt" aria-hidden="true"></div>
+          <div id="keysScroll" class="keys-scroll" tabindex="0" role="group" aria-describedby="hintText">
+            <div id="keys" class="keys"></div>
+          </div>
+          <div class="case-bottom" aria-hidden="true"><span class="case-bottom-inlay"></span></div>
+        </div>
+
+        <div id="scrollControl" class="scroll-control" hidden>
+          <label for="scrollRange">Posisi tuts</label>
+          <input id="scrollRange" type="range" min="0" max="100" value="0">
+        </div>
+
+        <p id="hintText" class="hint">Klik tuts atau pakai huruf <kbd>Q</kbd>–<kbd>M</kbd> berurutan ke kanan. Tahan <kbd>Shift</kbd> untuk tuts hitam, <kbd>Space</kbd> untuk sustain. Saat area piano fokus, pakai <kbd>←</kbd> / <kbd>→</kbd> dan <kbd>Enter</kbd>.</p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>Suara: <a href="https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html" target="_blank" rel="noopener noreferrer">Salamander Grand Piano</a> oleh Alexander Holm · <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer">CC BY 3.0</a>. Sample: <a href="https://github.com/Tonejs/audio/tree/master/salamander" target="_blank" rel="noopener noreferrer">Tonejs/audio</a>.</p>
+      <p>88 pitch direkonstruksi dari 30 sample rekaman asli dengan Web Audio API.</p>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast" role="alert" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

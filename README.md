@@ -1,39 +1,518 @@
 # GRAND / 88
 
 [![GitHub Pages](https://img.shields.io/website?url=https%3A%2F%2Fikyletwar.github.io%2Fgrand-piano-88%2F&label=pages&logo=github)](https://ikyletwar.github.io/grand-piano-88/)
-[![Stack](https://img.shields.io/badge/stack-vanilla%20HTML%20%2B%20CSS%20%2B%20JS-eb7b32)](#arsitektur-teknis)
+[![Stack](https://img.shields.io/badge/stack-vanilla%20HTML%20%2B%20CSS%20%2B%20JS-eb7b32)](#english)
 [![Audio](https://img.shields.io/badge/audio-Salamander%20CC%20BY%203.0-2f6fed)](CREDITS.md)
-[![Offline](https://img.shields.io/badge/offline-service%20worker-1f9d55)](#mode-offline--pwa)
-[![Keys](https://img.shields.io/badge/keys-88%20%28A0%E2%80%93C8%29-171717)](#instrumen)
+[![Offline](https://img.shields.io/badge/offline-service%20worker-1f9d55)](#en-offline-mode--pwa)
+[![Keys](https://img.shields.io/badge/keys-88%20%28A0%E2%80%93C8%29-171717)](#en-full-keyboard-map)
+
+> **An 88-key grand piano in the browser.** Real Yamaha C5 recordings, sustain pedal, `Q`–`M` keyboard map with `Shift` for black keys, a realistic piano case UI, and full offline mode. No build step, no framework, no API, no analytics.
+
+**[Live demo](https://ikyletwar.github.io/grand-piano-88/)** · **[Repository](https://github.com/Ikyletwar/grand-piano-88)** · **[Audio credits](CREDITS.md)**
+
+<div align="center">
+
+[🇬🇧 **English**](#english) · [🇮🇩 **Bahasa Indonesia**](#bahasa-indonesia)
+
+</div>
+
+---
+
+<a id="english"></a>
+
+## Table of contents
+
+- [Overview](#en-overview)
+- [Key features](#en-key-features)
+- [Demo & access](#en-demo--access)
+- [Quick start](#en-quick-start)
+- [Full keyboard map](#en-full-keyboard-map)
+- [Complete controls](#en-complete-controls)
+- [Technical architecture](#en-technical-architecture)
+- [Audio engine](#en-audio-engine)
+- [Offline mode & PWA](#en-offline-mode--pwa)
+- [Project structure](#en-project-structure)
+- [Responsiveness](#en-responsiveness)
+- [Accessibility](#en-accessibility)
+- [Performance](#en-performance)
+- [Browser compatibility](#en-browser-compatibility)
+- [Deployment](#en-deployment)
+- [Troubleshooting](#en-troubleshooting)
+- [License & attribution](#en-license--attribution)
+- [Version history](#en-version-history)
+
+---
+
+<a id="en-overview"></a>
+
+## Overview
+
+This project is a static web app that turns the browser into an 88-key grand piano. Every sound comes from real **Salamander Grand Piano** samples — a Yamaha C5 recorded with two AKG C414 microphones by Alexander Holm and released under **CC BY 3.0**.
+
+Three design principles drive the implementation:
+
+1. **Real sound, not synthesis.** There is no oscillator-based piano. Thirty MP3 files are loaded and mapped onto 88 pitches with `AudioBufferSourceNode.playbackRate`.
+2. **Controls that feel like an instrument.** Sustain, click-position velocity, light reverb, and immediate key response.
+3. **No external dependency at play time.** A local sample mirror lives in the repo, a service worker caches everything, and CDNs are only fallbacks.
+
+---
+
+<a id="en-key-features"></a>
+
+## Key features
+
+### Instrument
+
+- **Full 88 keys**, A0 to C8 — 52 white keys and 36 black keys.
+- **Real grand piano samples**: Salamander Grand Piano, Yamaha C5, CC BY 3.0.
+- **Sustain pedal** via the UI button or `Space`. While held, release extends from 240 ms to 1.8 s.
+- **Dynamic velocity**: clicking near the bottom of a key produces a stronger attack; clicking near the pivot is softer.
+- **Procedural reverb** built from a runtime-generated impulse response — no extra audio file.
+- **Built-in demo**: the opening phrase of *Für Elise* followed by an A minor arpeggio, with automatic pedalling.
+
+### Interaction
+
+- **`Q`–`M` keyboard map** running left to right across the white keys.
+- **`Shift` + letter** plays the matching black key.
+- **Glissando**: press and drag the pointer across keys; the previous note is released and the new one triggered.
+- **Multi-touch**: every pointer ID is tracked separately, so multi-finger chords work.
+- **Three view modes**: full 88 keys, 24 keys, and 12 keys.
+- **Octave shift** moves the keyboard map by one octave per step.
+- **Optional note labels**, including shortcut chips directly on the keys.
+
+### Infrastructure
+
+- **Pure static site**: `index.html`, `styles.css`, `app.js`, `sw.js`.
+- **Offline-ready** via a service worker with 35 cache entries.
+- **CDN fallback** to `tonejs.github.io` and `jsdelivr` if the local mirror fails.
+- **Accessibility**: skip link, focus rings, `aria-keyshortcuts`, `aria-describedby`, `prefers-reduced-motion`.
+- **Lighthouse**: Accessibility 1.00 · Best Practices 1.00 · SEO 1.00 · 0 failures.
+
+---
+
+<a id="en-demo--access"></a>
+
+## Demo & access
+
+| Need | Location |
+|---|---|
+| Live version | <https://ikyletwar.github.io/grand-piano-88/> |
+| Source code | <https://github.com/Ikyletwar/grand-piano-88> |
+| Audio credit & license | [`CREDITS.md`](CREDITS.md) |
+| In-app keyboard guide | `?` button in the header, or press `?` |
+
+GitHub Pages is active from branch `main`, path `/`, with HTTPS enforced.
+
+---
+
+<a id="en-quick-start"></a>
+
+## Quick start
+
+There is no dependency to install. All you need is a modern browser and a static server.
+
+```bash
+git clone https://github.com/Ikyletwar/grand-piano-88.git
+cd grand-piano-88
+python3 -m http.server 8080
+```
+
+Open <http://localhost:8080>.
+
+Alternatives if Python is unavailable:
+
+```bash
+npx serve .
+# or
+php -S localhost:8080
+```
+
+> **Important:** opening `index.html` directly through `file://` still plays the piano, but the browser blocks `fetch` calls to local MP3 files. The app then falls back to the CDN and requires internet. For full offline use, run the local server or use GitHub Pages after the first visit.
+
+---
+
+<a id="en-full-keyboard-map"></a>
+
+## Full keyboard map
+
+Letters follow physical keyboard order: `Q` at the upper left, continuing to `P`, then down to `A`–`L`, then `Z`–`M`. `Q` is the leftmost white key in the active map; `M` is the rightmost white key in the active map.
+
+### Default map — starting at C3
+
+```text
+White : Q  W  E  R  T  Y  U  I  O  P  A  S  D  F  G  H  J  K  L  Z  X  C  V  B  N  M
+Note  : C3 D3 E3 F3 G3 A3 B3 C4 D4 E4 F4 G4 A4 B4 C5 D5 E5 F5 G5 A5 B5 C6 D6 E6 F6 G6
+Black : ⇧Q ⇧E ⇧R ⇧T ⇧U ⇧I ⇧P ⇧A ⇧S ⇧F ⇧G ⇧J ⇧K ⇧L ⇧X ⇧C ⇧B ⇧N ⇧M
+Note  : C#3 D#3 F#3 G#3 A#3 C#4 D#4 F#4 G#4 A#4 C#5 D#5 F#5 G#5 A#5 C#6 D#6 F#6 G#6
+```
+
+`⇧` means hold `Shift` before pressing the letter.
+
+### Black-key rules
+
+- For `C`, `D`, `F`, `G`, `A`: `Shift + letter` plays the black key **to the right**.
+- For `E` and `B`: there is no black key to the right, so the one **to the left** is used (`D#` / `A#`).
+- Some black keys can be triggered by two different `Shift` letters. For example, `Shift+W` and `Shift+E` both produce `D#3`; the chip shows the unique letter, but both combinations work.
+
+### Octave shift
+
+The `−` / `=` buttons or toolbar controls move the map start by one octave. Supported starting notes: `C1`–`C4`.
+
+| Map start | `Q` | `M` |
+|---|---|---|
+| C1 | C1 · MIDI 24 | G4 · MIDI 67 |
+| C2 | C2 · MIDI 36 | G5 · MIDI 79 |
+| **C3 — default** | **C3 · MIDI 48** | **G6 · MIDI 91** |
+| C4 | C4 · MIDI 60 | G7 · MIDI 103 |
+
+When the map shifts, shortcut chips and key labels update with it.
+
+---
+
+<a id="en-complete-controls"></a>
+
+## Complete controls
+
+| Action | Input | Behavior |
+|---|---|---|
+| Play white keys | `Q` … `M` | Pitch rises in order to the right |
+| Play black keys | `Shift` + letter | Maps to the nearest black key |
+| Sustain | `Space` or Sustain button | Hold to keep released notes ringing |
+| Velocity | Click position on the key | Pivot ≈ 0.48 · bottom edge ≈ 1.00 |
+| Glissando | `pointerdown` + `pointermove` | Previous note is released, new note triggered |
+| Multi-touch | Several fingers at once | Each pointer ID owns its own voice |
+| Shift octave | `−` / `=` | One octave per step |
+| Note labels | `` ` `` or Labels toggle | Show/hide note names + shortcuts |
+| Reverb | Reverb toggle | Wet gain 0 ↔ 0.13 |
+| Volume | Volume slider | Master gain 0–90 % |
+| Key navigation | Focus piano area + `←` / `→` | Moves the focused key |
+| Play focused key | `Enter` | Attack on press, release on release |
+| View mode | 88 / 24 / 12 | Changes the number of rendered keys |
+| Demo | Play demo button | Plays the phrase; click again to stop |
+| Help | `?` or `?` button | Opens the help panel |
+
+---
+
+<a id="en-technical-architecture"></a>
+
+## Technical architecture
+
+```mermaid
+flowchart LR
+  INPUT[Pointer / Keyboard / Demo] --> ENGINE[noteOn / noteOff]
+  ENGINE --> PICK[Pick nearest sample]
+  PICK --> RATE[Adjust playbackRate from MIDI delta]
+  RATE --> ENV[Gain envelope + sustain]
+  ENV --> BUS[Voice bus]
+  BUS --> DRY[Dry gain]
+  BUS --> VERB[Convolver reverb]
+  DRY --> MASTER[Master gain]
+  VERB --> MASTER
+  MASTER --> COMP[Dynamics compressor]
+  COMP --> OUT[AudioContext destination]
+```
+
+### Components
+
+| File | Responsibility |
+|---|---|
+| `index.html` | Semantic markup, toolbar, help panel, attribution footer |
+| `styles.css` | Wood case, ivory/black key geometry, active state, responsive layout, reduced-motion |
+| `app.js` | Sample loader, Web Audio graph, input engine, voice manager, demo |
+| `sw.js` | Precache + cache-first strategy for same-origin assets |
+| `samples/` | 30 Salamander Grand Piano MP3 files |
+
+No bundler, no framework, no third-party audio library. All logic runs in the browser.
+
+---
+
+<a id="en-audio-engine"></a>
+
+## Audio engine
+
+### Sample mapping
+
+The Tone.js distribution of Salamander Grand Piano contains 30 MP3 files: `A0`–`A7`, `C1`–`C8`, `Ds1`–`Ds7`, and `Fs1`–`Fs7`. These samples sit at minor-third/octave intervals.
+
+For every MIDI note 21–108, the app picks the nearest sample and computes:
+
+```text
+playbackRate = 2 ^ ((MIDI_target - MIDI_sample) / 12)
+```
+
+The maximum distance to the nearest sample is ±1.5 semitones, so pitch shifts stay natural without extreme stretching.
+
+### Envelope and voices
+
+| Parameter | Value |
+|---|---|
+| Attack | 6 ms, exponential ramp from 0.0001 to peak |
+| Peak gain | `velocity ^ 1.25 × 0.95` |
+| Release without pedal | 240 ms |
+| Release with pedal | 1.8 s |
+| Retrigger | Old voice released over 50 ms before the new voice starts |
+| Dry gain | 0.96 |
+| Wet gain | 0.13 when reverb is on |
+| Master gain | `volume / 100 × 0.9` |
+| Compressor | threshold −14 dB, knee 18, ratio 3, attack 4 ms, release 200 ms |
+
+> **Honest detail about dynamics:** the original Salamander set has 16 velocity layers. The MP3 distribution used here provides one layer per pitch, so velocity controls gain rather than switching sample layers. This is a deliberate trade-off that keeps the total asset size around 2 MB and web-ready.
+
+### Reverb
+
+The impulse response is generated when the audio graph is created: two noise channels with exponential decay (`decay = 2.8`) over 1.7 seconds. No external IR file is used.
+
+### Autoplay policy
+
+The `AudioContext` is created on page load but may start as `suspended`. The first interaction — clicking a key, a button, or pressing a key — calls `resume()`. This follows browser autoplay policy without an extra prompt.
+
+---
+
+<a id="en-offline-mode--pwa"></a>
+
+## Offline mode & PWA
+
+The `sw.js` service worker uses cache `grand-piano-88-v2` and precaches:
+
+- `./` and `./index.html`
+- `styles.css`
+- `app.js`
+- `sw.js`
+- all 30 MP3 files in `samples/`
+
+That is **35 cache entries**. The strategy is:
+
+1. **Cache-first** for every same-origin GET request, including `HEAD` requests via `ignoreMethod: true`.
+2. **Network fallback**: on a cache miss, the request goes to the network and a successful response is stored.
+3. **Cross-origin skipped**: CDNs are not cached by the service worker; the browser's own cache still applies.
+4. **Offline navigation**: if a `navigate` request fails, `index.html` is served from cache.
+
+While offline, the header status changes to `Siap · 30 sample · offline`.
+
+### Behavior by access method
+
+| Access method | Fully offline? | Explanation |
+|---|---|---|
+| `http://localhost` via static server | Yes | All files are read directly from disk |
+| GitHub Pages after first visit | Yes | The service worker has already filled the cache |
+| GitHub Pages first visit without internet | No | HTML/JS/samples must be downloaded once |
+| Direct `file://` | No | The browser blocks local file `fetch`; CDN is used |
+
+To invalidate the cache after a code change, bump `CACHE_NAME` in `sw.js`. Old caches are removed automatically when the new worker activates.
+
+---
+
+<a id="en-project-structure"></a>
+
+## Project structure
+
+```text
+grand-piano-88/
+├── index.html      # Markup, controls, help panel, attribution footer
+├── styles.css      # Piano case, key geometry, interaction states, responsiveness
+├── app.js          # Audio engine, voice manager, input, demo, SW registration
+├── sw.js           # Precache 35 assets + cache-first strategy
+├── samples/        # 30 Salamander Grand Piano MP3 files (~2.0 MB)
+│   ├── A0.mp3 … A7.mp3
+│   ├── C1.mp3 … C8.mp3
+│   ├── Ds1.mp3 … Ds7.mp3
+│   └── Fs1.mp3 … Fs7.mp3
+├── README.md       # This bilingual documentation
+└── CREDITS.md      # Audio attribution and license
+```
+
+---
+
+<a id="en-responsiveness"></a>
+
+## Responsiveness
+
+| Breakpoint | Behavior |
+|---|---|
+| ≥ 900 px | Default 88-key view; full case; key height ≈ 240–300 px |
+| 720–899 px | 88 keys remain active; position slider appears if content overflows |
+| < 720 px | Default 24 keys so touch targets stay large |
+| ≤ 620 px | Toolbar wraps, case padding reduced, key height 208 px, smaller labels |
+
+The 88-key mode remains available on narrow screens. Because the key area uses `touch-action: none` for glissando, horizontal navigation uses the **Key position** slider below the case rather than swiping on the keys.
+
+No horizontal overflow was observed at 390 px, 768 px, or 1024 px.
+
+---
+
+<a id="en-accessibility"></a>
+
+## Accessibility
+
+- `skip-link` to the piano area for keyboard users.
+- Buttons use semantic `<button>` elements with accessible names; `?`, `−`, and `+` icons are drawn with CSS to avoid `aria-label` conflicts.
+- Every key exposes a matching `aria-keyshortcuts`, e.g. `Q` or `Shift+M`.
+- The piano area uses `aria-describedby` pointing to the guide text.
+- `:focus-visible` gives every interactive element a distinct accent outline.
+- The help panel uses `aria-expanded` and `aria-controls`.
+- `prefers-reduced-motion` disables transitions and the pressed-key transform.
+- Text contrast follows the dark palette with a warm accent; Lighthouse accessibility = 1.00.
+
+---
+
+<a id="en-performance"></a>
+
+## Performance
+
+| Metric | Value |
+|---|---|
+| Sample size | ~2.0 MB for 30 MP3 files |
+| Requests on load | 30 sample GETs + core assets |
+| Parallel loaders | 6 concurrent workers |
+| HEAD requests | 0 — per-file fallback goes straight to CDN |
+| Visual assets | CSS gradients only; no decorative images |
+| Animation | `transform` and `opacity` only; no layout thrash |
+| After caching | 0 network requests for same-origin assets |
+
+All samples load at startup to eliminate latency on the first key press. Progress is shown in the header until `Siap · 30 sample` appears.
+
+---
+
+<a id="en-browser-compatibility"></a>
+
+## Browser compatibility
+
+| Browser | Status | Note |
+|---|---|---|
+| Chrome / Chromium | Supported | Full Web Audio + service worker |
+| Edge | Supported | Chromium-based |
+| Firefox | Supported | Full Web Audio + service worker |
+| Safari macOS | Supported | `AudioContext.resume()` runs on first gesture |
+| Safari iOS | Supported | 24-key view by default; navigation via position slider |
+| `file://` | Limited | Local samples blocked; CDN is used |
+
+Service workers only run on `https://` or `localhost`, per the web specification.
+
+---
+
+<a id="en-deployment"></a>
+
+## Deployment
+
+This project is already deployed to GitHub Pages:
+
+```text
+Repository : Ikyletwar/grand-piano-88
+Branch     : main
+Path       : /
+Build type : legacy
+URL        : https://ikyletwar.github.io/grand-piano-88/
+```
+
+To redeploy:
+
+```bash
+git add .
+git commit -m "Describe your change"
+git push origin main
+```
+
+GitHub Pages rebuilds automatically. For a custom domain, add a `CNAME` file at the repo root and set the domain under **Settings → Pages**.
+
+---
+
+<a id="en-troubleshooting"></a>
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| No sound | `AudioContext` is still `suspended` | Click any key or button; the context resumes |
+| `Sample tidak dapat diakses` status | Local mirror and CDNs both failed | Check the connection, then press **Try again** |
+| Stuck at `Memuat sample …` | Slow network on first load | Wait; 30 files download in parallel |
+| Keyboard does not respond | Focus is on a slider/input | Click an empty area or the piano first |
+| `Space` activates a button instead of sustain | Focus is on another button | Click the piano or the Sustain button |
+| 25th key missing in 24-key view | 26-letter map is longer than the view | Use 88-key view, or shift with `−` / `=` |
+| 88-key view hard to pan on mobile | Touch on keys is reserved for glissando | Use the **Key position** slider |
+| Offline fails under `file://` | Browser blocks local file `fetch` | Use the local server or GitHub Pages |
+| Cache unchanged after update | Old cache version is still active | Bump `CACHE_NAME` in `sw.js` |
+
+---
+
+<a id="en-license--attribution"></a>
+
+## License & attribution
+
+### Audio
+
+- Instrument: **Salamander Grand Piano V3**, Yamaha C5.
+- Recording: **Alexander Holm**.
+- Source: <https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html>
+- License: [Creative Commons Attribution 3.0 Unported](https://creativecommons.org/licenses/by/3.0/)
+- MP3 distribution: <https://github.com/Tonejs/audio/tree/master/salamander>
+
+This attribution must be preserved under CC BY 3.0 and is already shown in the app footer and in [`CREDITS.md`](CREDITS.md).
+
+### Code
+
+The application code was written specifically for this repository and imports no third-party audio library. No explicit code license has been set; all rights to the code remain with the repository owner.
+
+---
+
+<a id="en-version-history"></a>
+
+## Version history
+
+| Version | Change |
+|---|---|
+| 1.0.0 | Initial build: 88 keys, 30 Salamander samples, sustain, reverb, demo, 88/24/12 views |
+| 1.1.0 | Keyboard map changed to `Q`–`M`; `Shift` for black keys; label toggle moved to backtick |
+| 1.2.0 | Service worker, 35-asset precache, full offline mode, offline status, CDN fallback without HEAD request |
+| 1.2.1 | Accessibility fixes for accessible names and bilingual extended documentation |
+
+---
+
+Built as a static web instrument: fast, predictable, and still usable without a connection after the first open.
+
+---
+
+<div align="center">
+
+[🇬🇧 **English**](#english) · [🇮🇩 **Bahasa Indonesia**](#bahasa-indonesia)
+
+</div>
+
+<a id="bahasa-indonesia"></a>
+
+## Bahasa Indonesia
 
 > **Piano grand 88 tuts di browser.** Rekaman Yamaha C5 nyata, sustain pedal, peta keyboard `Q`–`M` dengan `Shift` untuk tuts hitam, tampilan case piano realistis, dan mode offline penuh. Tanpa build step, tanpa framework, tanpa API, tanpa analytics.
 
-**[Buka versi live](https://ikyletwar.github.io/grand-piano-88/)** · **[Repository](https://github.com/Ikyletwar/grand-piano-88)** · **[Kredit audio](CREDITS.md)**
+**[Versi live](https://ikyletwar.github.io/grand-piano-88/)** · **[Repository](https://github.com/Ikyletwar/grand-piano-88)** · **[Kredit audio](CREDITS.md)**
 
 ---
+
+<a id="id-daftar-isi"></a>
 
 ## Daftar isi
 
-- [Ringkasan](#ringkasan)
-- [Fitur utama](#fitur-utama)
-- [Demo & akses](#demo--akses)
-- [Mulai cepat](#mulai-cepat)
-- [Peta keyboard lengkap](#peta-keyboard-lengkap)
-- [Kontrol lengkap](#kontrol-lengkap)
-- [Arsitektur teknis](#arsitektur-teknis)
-- [Mesin audio](#mesin-audio)
-- [Mode offline & PWA](#mode-offline--pwa)
-- [Struktur proyek](#struktur-proyek)
-- [Responsivitas](#responsivitas)
-- [Aksesibilitas](#aksesibilitas)
-- [Performa](#performa)
-- [Kompatibilitas browser](#kompatibilitas-browser)
-- [Deployment](#deployment)
-- [Pemecahan masalah](#pemecahan-masalah)
-- [Lisensi & atribusi](#lisensi--atribusi)
-- [Riwayat versi](#riwayat-versi)
+- [Ringkasan](#id-ringkasan)
+- [Fitur utama](#id-fitur-utama)
+- [Demo & akses](#id-demo--akses)
+- [Mulai cepat](#id-mulai-cepat)
+- [Peta keyboard lengkap](#id-peta-keyboard-lengkap)
+- [Kontrol lengkap](#id-kontrol-lengkap)
+- [Arsitektur teknis](#id-arsitektur-teknis)
+- [Mesin audio](#id-mesin-audio)
+- [Mode offline & PWA](#id-mode-offline--pwa)
+- [Struktur proyek](#id-struktur-proyek)
+- [Responsivitas](#id-responsivitas)
+- [Aksesibilitas](#id-aksesibilitas)
+- [Performa](#id-performa)
+- [Kompatibilitas browser](#id-kompatibilitas-browser)
+- [Deployment](#id-deployment)
+- [Pemecahan masalah](#id-pemecahan-masalah)
+- [Lisensi & atribusi](#id-lisensi--atribusi)
+- [Riwayat versi](#id-riwayat-versi)
 
 ---
+
+<a id="id-ringkasan"></a>
 
 ## Ringkasan
 
@@ -46,6 +525,8 @@ Tiga prinsip desain yang dipakai:
 3. **Tidak bergantung pada layanan eksternal saat dipakai.** Mirror sample ada di repo, service worker menyimpan semuanya, dan CDN hanya menjadi cadangan.
 
 ---
+
+<a id="id-fitur-utama"></a>
 
 ## Fitur utama
 
@@ -78,6 +559,8 @@ Tiga prinsip desain yang dipakai:
 
 ---
 
+<a id="id-demo--akses"></a>
+
 ## Demo & akses
 
 | Kebutuhan | Lokasi |
@@ -90,6 +573,8 @@ Tiga prinsip desain yang dipakai:
 Halaman GitHub Pages sudah aktif dari branch `main`, path `/`, dengan HTTPS enforced.
 
 ---
+
+<a id="id-mulai-cepat"></a>
 
 ## Mulai cepat
 
@@ -114,6 +599,8 @@ php -S localhost:8080
 > **Catatan penting:** membuka `index.html` langsung lewat `file://` tetap bisa memainkan piano, tetapi browser memblokir `fetch` ke file MP3 lokal. Aplikasi lalu memakai CDN dan memerlukan internet. Untuk offline penuh, pakai server lokal atau GitHub Pages setelah kunjungan pertama.
 
 ---
+
+<a id="id-peta-keyboard-lengkap"></a>
 
 ## Peta keyboard lengkap
 
@@ -151,6 +638,8 @@ Saat awal peta digeser, chip shortcut dan label di tuts ikut diperbarui.
 
 ---
 
+<a id="id-kontrol-lengkap"></a>
+
 ## Kontrol lengkap
 
 | Aksi | Input | Perilaku |
@@ -172,6 +661,8 @@ Saat awal peta digeser, chip shortcut dan label di tuts ikut diperbarui.
 | Panduan | `?` atau tombol `?` | Membuka panel bantuan |
 
 ---
+
+<a id="id-arsitektur-teknis"></a>
 
 ## Arsitektur teknis
 
@@ -203,6 +694,8 @@ flowchart LR
 Tidak ada bundler, tidak ada framework, tidak ada library audio pihak ketiga. Seluruh logika berjalan di browser.
 
 ---
+
+<a id="id-mesin-audio"></a>
 
 ## Mesin audio
 
@@ -244,6 +737,8 @@ Impulse response dibangkitkan saat audio graph dibuat: dua kanal noise dengan pe
 
 ---
 
+<a id="id-mode-offline--pwa"></a>
+
 ## Mode offline & PWA
 
 Service worker `sw.js` memakai cache `grand-piano-88-v2` dan melakukan precache terhadap:
@@ -276,6 +771,8 @@ Untuk memperbarui cache setelah perubahan kode, naikkan versi `CACHE_NAME` di `s
 
 ---
 
+<a id="id-struktur-proyek"></a>
+
 ## Struktur proyek
 
 ```text
@@ -295,6 +792,8 @@ grand-piano-88/
 
 ---
 
+<a id="id-responsivitas"></a>
+
 ## Responsivitas
 
 | Breakpoint | Perilaku |
@@ -310,6 +809,8 @@ Tidak ada horizontal overflow pada 390 px, 768 px, maupun 1024 px saat diuji.
 
 ---
 
+<a id="id-aksesibilitas"></a>
+
 ## Aksesibilitas
 
 - `skip-link` ke area piano untuk keyboard user.
@@ -322,6 +823,8 @@ Tidak ada horizontal overflow pada 390 px, 768 px, maupun 1024 px saat diuji.
 - Kontras teks mengikuti palet gelap dengan aksen hangat; Lighthouse accessibility = 1,00.
 
 ---
+
+<a id="id-performa"></a>
 
 ## Performa
 
@@ -339,6 +842,8 @@ Sample dimuat semua saat startup agar tidak ada latency pada tuts pertama. Statu
 
 ---
 
+<a id="id-kompatibilitas-browser"></a>
+
 ## Kompatibilitas browser
 
 | Browser | Status | Catatan |
@@ -353,6 +858,8 @@ Sample dimuat semua saat startup agar tidak ada latency pada tuts pertama. Statu
 Service worker hanya aktif di `https://` atau `localhost`, sesuai spesifikasi web.
 
 ---
+
+<a id="id-deployment"></a>
 
 ## Deployment
 
@@ -378,6 +885,8 @@ GitHub Pages akan membangun ulang otomatis. Bila memakai custom domain, tambahka
 
 ---
 
+<a id="id-pemecahan-masalah"></a>
+
 ## Pemecahan masalah
 
 | Gejala | Penyebab | Solusi |
@@ -393,6 +902,8 @@ GitHub Pages akan membangun ulang otomatis. Bila memakai custom domain, tambahka
 | Cache tidak berubah setelah update | Versi cache lama masih aktif | Naikkan `CACHE_NAME` di `sw.js` |
 
 ---
+
+<a id="id-lisensi--atribusi"></a>
 
 ## Lisensi & atribusi
 
@@ -411,6 +922,8 @@ Atribusi ini wajib dipertahankan sesuai CC BY 3.0 dan sudah tampil di footer apl
 Kode aplikasi ditulis khusus untuk repository ini dan tidak mengimpor library audio pihak ketiga. Belum ada lisensi kode eksplisit yang ditetapkan; seluruh hak atas kode melekat pada pemilik repository.
 
 ---
+
+<a id="id-riwayat-versi"></a>
 
 ## Riwayat versi
 

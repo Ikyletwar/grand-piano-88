@@ -27,6 +27,7 @@
 - [Demo & access](#en-demo--access)
 - [Quick start](#en-quick-start)
 - [Full keyboard map](#en-full-keyboard-map)
+- [MIDI input](#en-midi-input)
 - [Complete controls](#en-complete-controls)
 - [Technical architecture](#en-technical-architecture)
 - [Audio engine](#en-audio-engine)
@@ -76,6 +77,7 @@ Three design principles drive the implementation:
 - **`Shift` + letter** plays the matching black key.
 - **Glissando**: press and drag the pointer across keys; the previous note is released and the new one triggered.
 - **Multi-touch**: every pointer ID is tracked separately, so multi-finger chords work.
+- **USB MIDI input**: a digital piano or controller becomes the keyboard; the sound still comes from the browser's Salamander samples.
 - **Three view modes**: full 88 keys, 24 keys, and 12 keys.
 - **Octave shift** moves the keyboard map by one octave per step.
 - **Optional note labels**, including shortcut chips directly on the keys.
@@ -188,6 +190,9 @@ When the map shifts, shortcut chips and key labels update with it.
 | Key navigation | Focus piano area + `←` / `→` | Moves the focused key |
 | Play focused key | `Enter` | Attack on press, release on release |
 | View mode | 88 / 24 / 12 | Changes the number of rendered keys |
+| MIDI input | **Hubungkan MIDI** button | Grants access; an external keyboard plays the browser samples |
+| MIDI device / channel | MIDI input + Channel selects | All devices or one port; Omni or channels 1–16 |
+| MIDI panic | **Panic** button | Releases every note that originated from MIDI |
 | Demo | Play demo button | Plays the phrase; click again to stop |
 | Help | `?` or `?` button | Opens the help panel |
 
@@ -199,7 +204,9 @@ When the map shifts, shortcut chips and key labels update with it.
 
 ```mermaid
 flowchart LR
-  INPUT[Pointer / Keyboard / Demo] --> ENGINE[noteOn / noteOff]
+  MIDI[USB MIDI keyboard] --> PARSE[Web MIDI input]
+  PARSE --> ENGINE[noteOn / noteOff]
+  INPUT[Pointer / Keyboard / Demo] --> ENGINE
   ENGINE --> PICK[Pick nearest sample]
   PICK --> RATE[Adjust playbackRate from MIDI delta]
   RATE --> ENV[Gain envelope + sustain]
@@ -208,7 +215,8 @@ flowchart LR
   BUS --> VERB[Convolver reverb]
   DRY --> MASTER[Master gain]
   VERB --> MASTER
-  MASTER --> COMP[Dynamics compressor]
+  MASTER --> MIDIVOL[MIDI gain · CC7/CC11]
+  MIDIVOL --> COMP[Dynamics compressor]
   COMP --> OUT[AudioContext destination]
 ```
 
@@ -264,7 +272,44 @@ The impulse response is generated when the audio graph is created: two noise cha
 
 ### Autoplay policy
 
-The `AudioContext` is created on page load but may start as `suspended`. The first interaction — clicking a key, a button, or pressing a key — calls `resume()`. This follows browser autoplay policy without an extra prompt.
+The `AudioContext` is created on page load but may start as `suspended`. The first interaction — clicking a key, a button, or pressing a key — calls `resume()`. Clicking **Hubungkan MIDI** also resumes it inside a user gesture, so MIDI notes are audible immediately after permission is granted.
+
+---
+
+<a id="en-midi-input"></a>
+
+## MIDI input
+
+GRAND / 88 can use a **class-compliant USB MIDI keyboard** as its input device. Incoming note messages are played by the existing Salamander sample engine — the keyboard acts as a controller and the sound is produced in the browser. Nothing is sent back to the instrument.
+
+### Requirements
+
+- `https://` or `http://localhost` (secure context). The button is disabled on `file://` and plain LAN `http://`.
+- Chrome/Chromium, Edge, or Firefox. Safari and iOS Safari do not implement Web MIDI (status as of 2026); the button is disabled and the rest of the piano keeps working.
+- The keyboard may be connected before or after granting access — hot-plug is handled with `access.onstatechange`.
+- `sysex: false`: no SysEx, no patch editing, no firmware access.
+
+### Connecting
+
+1. Connect the keyboard over USB, then click **Hubungkan MIDI** and accept the browser permission prompt. Chrome 124+ prompts for *all* MIDI access, not just SysEx. The same click resumes `AudioContext`, which satisfies the autoplay policy.
+2. Wait for the header chip to read `MIDI aktif · <n> input`. If more than one port appears, pick the correct one in **MIDI input**.
+3. Choose **Omni** or a specific MIDI channel. Changing the device or channel releases all notes from the previous route to prevent stuck notes.
+4. Play. Velocity, sustain (CC64), pitch bend (±2 semitones), CC7/CC11 volume and CC120/121/123 panic are handled. Notes outside A0–C8 (21–108) are ignored.
+
+### Voice ownership
+
+Each voice remembers its origin (`pointer`, `keyboard`, `demo`, `click`, `enter`, `midi`). A note-off only releases a voice from the **same** origin, so holding `Q` and playing the same pitch on MIDI will not cut the `Q` voice — and vice versa. Keyboard sustain (CC64) and the UI `Space` pedal add together per channel. Notes are released on device disconnect, Panic, channel change, and tab hide.
+
+### MIDI troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| **Hubungkan MIDI** is disabled | No Web MIDI or no secure context | Open the app via HTTPS or `localhost` in Chrome, Edge, or Firefox |
+| Chip reads `MIDI: izin ditolak` | Permission declined | Re-enable MIDI in site settings, then click the button again |
+| Chip reads `MIDI aktif · belum ada perangkat` | No port exposed by the OS | Connect the keyboard, check the USB cable, then reconnect |
+| No sound from MIDI, but the key lights up | Notes arrive on a different channel | Set **Channel** to Omni or match the keyboard's transmit channel |
+| Notes keep ringing | Device disconnected mid-note or channel changed | Press **Panic**; tracked MIDI voices are normally released automatically |
+| CC7 changes level but the Volume slider does not move | Separate gain node | By design: CC7/CC11 drive a dedicated MIDI gain after the master fader |
 
 ---
 
@@ -272,7 +317,7 @@ The `AudioContext` is created on page load but may start as `suspended`. The fir
 
 ## Offline mode & PWA
 
-The `sw.js` service worker uses cache `grand-piano-88-v2` and precaches:
+The `sw.js` service worker uses cache `grand-piano-88-v3` and precaches:
 
 - `./` and `./index.html`
 - `styles.css`
@@ -377,16 +422,16 @@ All samples load at startup to eliminate latency on the first key press. Progres
 
 ## Browser compatibility
 
-| Browser | Status | Note |
-|---|---|---|
-| Chrome / Chromium | Supported | Full Web Audio + service worker |
-| Edge | Supported | Chromium-based |
-| Firefox | Supported | Full Web Audio + service worker |
-| Safari macOS | Supported | `AudioContext.resume()` runs on first gesture |
-| Safari iOS | Supported | 24-key view by default; navigation via position slider |
-| `file://` | Limited | Local samples blocked; CDN is used |
+| Browser | Piano | MIDI input | Note |
+|---|---|---|---|
+| Chrome / Chromium | Supported | Supported (43+) | Full Web Audio + service worker; permission prompt since 124 |
+| Edge | Supported | Supported (79+) | Chromium-based |
+| Firefox | Supported | Supported (108+) | Full Web Audio + service worker |
+| Safari macOS | Supported | **Not supported** | `AudioContext.resume()` runs on first gesture |
+| Safari iOS | Supported | **Not supported** | 24-key view by default; navigation via position slider |
+| `file://` | Limited | **Not supported** | Local samples blocked; CDN is used |
 
-Service workers only run on `https://` or `localhost`, per the web specification.
+Service workers and Web MIDI only run on `https://` or `localhost`, per the web specification. When MIDI is unavailable the button is disabled with a tooltip; keyboard, pointer, and demo input are unchanged.
 
 ---
 
@@ -431,6 +476,10 @@ GitHub Pages rebuilds automatically. For a custom domain, add a `CNAME` file at 
 | 88-key view hard to pan on mobile | Touch on keys is reserved for glissando | Use the **Key position** slider |
 | Offline fails under `file://` | Browser blocks local file `fetch` | Use the local server or GitHub Pages |
 | Cache unchanged after update | Old cache version is still active | Bump `CACHE_NAME` in `sw.js` |
+| MIDI button disabled | Safari/iOS or non-secure context | Use HTTPS/`localhost` in Chrome, Edge, or Firefox |
+| MIDI permission denied | Prompt declined or revoked | Re-enable in site settings, then click **Hubungkan MIDI** |
+| MIDI key lights up but no sound | Wrong channel, or samples still loading | Set Channel to Omni; wait for `Siap · 30 sample` |
+| MIDI notes overlap with mouse/keyboard notes | Different voice origins on the same pitch | By design: first origin wins; release the first key or press **Panic** |
 
 ---
 
@@ -464,6 +513,7 @@ The application code was written specifically for this repository and imports no
 | 1.1.0 | Keyboard map changed to `Q`–`M`; `Shift` for black keys; label toggle moved to backtick |
 | 1.2.0 | Service worker, 35-asset precache, full offline mode, offline status, CDN fallback without HEAD request |
 | 1.2.1 | Accessibility fixes for accessible names and bilingual extended documentation |
+| 1.3.0 | Web MIDI input, source-aware voice ownership, per-channel sustain/pitch bend, MIDI panic, MIDI gain node, cache `v3` |
 
 ---
 
@@ -496,6 +546,7 @@ Built as a static web instrument: fast, predictable, and still usable without a 
 - [Demo & akses](#id-demo--akses)
 - [Mulai cepat](#id-mulai-cepat)
 - [Peta keyboard lengkap](#id-peta-keyboard-lengkap)
+- [MIDI input](#id-midi-input)
 - [Kontrol lengkap](#id-kontrol-lengkap)
 - [Arsitektur teknis](#id-arsitektur-teknis)
 - [Mesin audio](#id-mesin-audio)
@@ -545,6 +596,7 @@ Tiga prinsip desain yang dipakai:
 - **`Shift` + huruf** memainkan tuts hitam yang bersesuaian.
 - **Glissando**: tekan dan geser pointer melintasi tuts; nada sebelumnya dilepas, nada baru dipicu.
 - **Multi-touch**: setiap pointer ID dipantau terpisah, sehingga chord sentuh beberapa jari berfungsi.
+- **Input MIDI USB**: piano digital / controller menjadi keyboard; suara tetap dari sample Salamander di browser.
 - **Tiga mode tampilan**: 88 tuts penuh, 24 tuts, dan 12 tuts.
 - **Octave shift** untuk memindahkan peta keyboard satu oktaf per langkah.
 - **Label not opsional**, termasuk chip shortcut langsung di tuts.
@@ -657,6 +709,9 @@ Saat awal peta digeser, chip shortcut dan label di tuts ikut diperbarui.
 | Navigasi tuts | Fokus area piano + `←` / `→` | Memindahkan tuts yang difokuskan |
 | Mainkan tuts fokus | `Enter` | Attack saat ditekan, release saat dilepas |
 | Tampilan | 88 / 24 / 12 | Mengubah jumlah tuts yang dirender |
+| Input MIDI | tombol **Hubungkan MIDI** | Memberi izin; keyboard eksternal memainkan sample browser |
+| Perangkat / channel MIDI | select MIDI input + Channel | Semua perangkat atau satu port; Omni atau channel 1–16 |
+| Panic MIDI | tombol **Panic** | Melepas semua nada yang berasal dari MIDI |
 | Demo | tombol Putar demo | Memutar frasa; klik lagi untuk menghentikan |
 | Panduan | `?` atau tombol `?` | Membuka panel bantuan |
 
@@ -668,7 +723,9 @@ Saat awal peta digeser, chip shortcut dan label di tuts ikut diperbarui.
 
 ```mermaid
 flowchart LR
-  INPUT[Pointer / Keyboard / Demo] --> ENGINE[noteOn / noteOff]
+  MIDI[Keyboard MIDI USB] --> PARSE[Web MIDI input]
+  PARSE --> ENGINE[noteOn / noteOff]
+  INPUT[Pointer / Keyboard / Demo] --> ENGINE
   ENGINE --> PICK[Pilih sample terdekat]
   PICK --> RATE[Ubah playbackRate dari selisih MIDI]
   RATE --> ENV[Gain envelope + sustain]
@@ -677,7 +734,8 @@ flowchart LR
   BUS --> VERB[Convolver reverb]
   DRY --> MASTER[Master gain]
   VERB --> MASTER
-  MASTER --> COMP[Dynamics compressor]
+  MASTER --> MIDIVOL[MIDI gain · CC7/CC11]
+  MIDIVOL --> COMP[Dynamics compressor]
   COMP --> OUT[AudioContext destination]
 ```
 
@@ -733,7 +791,44 @@ Impulse response dibangkitkan saat audio graph dibuat: dua kanal noise dengan pe
 
 ### Autoplay policy
 
-`AudioContext` dibuat saat halaman dimuat, tetapi statusnya bisa `suspended`. Setiap interaksi pertama — klik tuts, tombol, atau keyboard — memanggil `resume()`. Ini mengikuti kebijakan autoplay browser tanpa perlu prompt tambahan.
+`AudioContext` dibuat saat halaman dimuat, tetapi statusnya bisa `suspended`. Setiap interaksi pertama — klik tuts, tombol, atau keyboard — memanggil `resume()`. Klik **Hubungkan MIDI** juga me-resume konteks di dalam user gesture, sehingga note MIDI langsung terdengar setelah izin diberikan.
+
+---
+
+<a id="id-midi-input"></a>
+
+## MIDI input
+
+GRAND / 88 bisa memakai **keyboard MIDI USB class-compliant** sebagai perangkat input. Pesan note yang masuk dimainkan oleh mesin sample Salamander yang sudah ada — keyboard berperan sebagai controller, suara dihasilkan di browser. Tidak ada data MIDI yang dikirim kembali ke instrumen.
+
+### Persyaratan
+
+- `https://` atau `http://localhost` (secure context). Tombol dinonaktifkan di `file://` dan `http://` LAN biasa.
+- Chrome/Chromium, Edge, atau Firefox. Safari dan iOS Safari belum mengimplementasikan Web MIDI (per 2026); tombol disabled dan piano tetap bisa dipakai.
+- Keyboard boleh disambungkan sebelum atau sesudah izin diberikan — hot-plug ditangani lewat `access.onstatechange`.
+- `sysex: false`: tanpa SysEx, tanpa edit patch, tanpa akses firmware.
+
+### Cara menyambung
+
+1. Hubungkan keyboard lewat USB, klik **Hubungkan MIDI**, lalu terima prompt izin browser. Chrome 124+ meminta izin untuk *semua* akses MIDI, bukan hanya SysEx. Klik yang sama juga me-resume `AudioContext`, sehingga memenuhi kebijakan autoplay.
+2. Tunggu chip di header berbunyi `MIDI aktif · <n> input`. Bila lebih dari satu port tampil, pilih yang benar di **MIDI input**.
+3. Pilih **Omni** atau channel MIDI tertentu. Mengganti perangkat/channel melepas semua nada dari rute lama agar tidak ada stuck note.
+4. Mulai bermain. Velocity, sustain (CC64), pitch bend (±2 semitone), volume CC7/CC11, dan panic CC120/121/123 didukung. Note di luar A0–C8 (21–108) diabaikan.
+
+### Kepemilikan voice
+
+Setiap voice menyimpan asalnya (`pointer`, `keyboard`, `demo`, `click`, `enter`, `midi`). Note-off hanya melepas voice dari **asal yang sama**, jadi menahan `Q` lalu memainkan pitch yang sama lewat MIDI tidak akan memotong voice `Q` — dan sebaliknya. Sustain keyboard (CC64) dan pedal `Space` di UI bersifat aditif per channel. Nada dilepas saat perangkat terputus, Panic, pergantian channel, dan saat tab disembunyikan.
+
+### Pemecahan masalah MIDI
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Tombol **Hubungkan MIDI** disabled | Tidak ada Web MIDI atau bukan secure context | Buka lewat HTTPS atau `localhost` di Chrome, Edge, atau Firefox |
+| Chip `MIDI: izin ditolak` | Izin ditolak | Aktifkan lagi di pengaturan situs, lalu klik tombol lagi |
+| Chip `MIDI aktif · belum ada perangkat` | Tidak ada port yang terlihat OS | Sambungkan keyboard, cek kabel USB, lalu sambung ulang |
+| MIDI tidak bersuara, tapi tuts menyala | Note masuk di channel lain | Set **Channel** ke Omni atau samakan dengan channel kirim keyboard |
+| Nada terus berbunyi | Perangkat terputus saat note ditahan atau channel berubah | Tekan **Panic**; voice MIDI normalnya dilepas otomatis |
+| CC7 mengubah level, slider Volume tidak bergerak | Node gain terpisah | Memang by design: CC7/CC11 mengendarai gain MIDI khusus setelah fader master |
 
 ---
 
@@ -741,7 +836,7 @@ Impulse response dibangkitkan saat audio graph dibuat: dua kanal noise dengan pe
 
 ## Mode offline & PWA
 
-Service worker `sw.js` memakai cache `grand-piano-88-v2` dan melakukan precache terhadap:
+Service worker `sw.js` memakai cache `grand-piano-88-v3` dan melakukan precache terhadap:
 
 - `./` dan `./index.html`
 - `styles.css`
@@ -846,16 +941,16 @@ Sample dimuat semua saat startup agar tidak ada latency pada tuts pertama. Statu
 
 ## Kompatibilitas browser
 
-| Browser | Status | Catatan |
-|---|---|---|
-| Chrome / Chromium | Didukung | Web Audio + service worker penuh |
-| Edge | Didukung | Berbasis Chromium |
-| Firefox | Didukung | Web Audio + service worker penuh |
-| Safari macOS | Didukung | `AudioContext.resume()` dipanggil pada gesture pertama |
-| Safari iOS | Didukung | Mode 24 tuts default; geser memakai slider posisi |
-| `file://` | Terbatas | Sample lokal diblokir; CDN dipakai |
+| Browser | Piano | MIDI input | Catatan |
+|---|---|---|---|
+| Chrome / Chromium | Didukung | Didukung (43+) | Web Audio + service worker penuh; prompt izin sejak 124 |
+| Edge | Didukung | Didukung (79+) | Berbasis Chromium |
+| Firefox | Didukung | Didukung (108+) | Web Audio + service worker penuh |
+| Safari macOS | Didukung | **Tidak didukung** | `AudioContext.resume()` dipanggil pada gesture pertama |
+| Safari iOS | Didukung | **Tidak didukung** | Mode 24 tuts default; geser memakai slider posisi |
+| `file://` | Terbatas | **Tidak didukung** | Sample lokal diblokir; CDN dipakai |
 
-Service worker hanya aktif di `https://` atau `localhost`, sesuai spesifikasi web.
+Service worker dan Web MIDI hanya aktif di `https://` atau `localhost`, sesuai spesifikasi web. Saat MIDI tidak tersedia, tombol di-disabled dengan tooltip; input keyboard, pointer, dan demo tetap normal.
 
 ---
 
@@ -900,6 +995,10 @@ GitHub Pages akan membangun ulang otomatis. Bila memakai custom domain, tambahka
 | Mode 88 sulit digeser di HP | Sentuhan pada tuts dipakai untuk glissando | Pakai slider **Posisi tuts** |
 | Offline tidak berfungsi di `file://` | Browser memblokir fetch file lokal | Pakai server lokal atau GitHub Pages |
 | Cache tidak berubah setelah update | Versi cache lama masih aktif | Naikkan `CACHE_NAME` di `sw.js` |
+| Tombol MIDI disabled | Safari/iOS atau bukan secure context | Pakai HTTPS/`localhost` di Chrome, Edge, atau Firefox |
+| Izin MIDI ditolak | Prompt ditolak atau dicabut | Aktifkan di pengaturan situs, lalu klik **Hubungkan MIDI** |
+| Tuts MIDI menyala tapi tidak bersuara | Channel salah atau sample masih dimuat | Set Channel ke Omni; tunggu `Siap · 30 sample` |
+| Note MIDI tumpang tindih dengan mouse/keyboard | Voice dari asal berbeda pada pitch sama | Memang by design: asal pertama menang; lepas tuts pertama atau tekan **Panic** |
 
 ---
 
@@ -933,6 +1032,7 @@ Kode aplikasi ditulis khusus untuk repository ini dan tidak mengimpor library au
 | 1.1.0 | Peta keyboard diganti ke urutan `Q`–`M`; `Shift` untuk tuts hitam; toggle label dipindah ke backtick |
 | 1.2.0 | Service worker, precache 35 aset, offline penuh, status offline, fallback CDN tanpa request HEAD |
 | 1.2.1 | Perbaikan aksesibilitas nama aksesibel dan README dokumentasi lengkap |
+| 1.3.0 | Input Web MIDI, kepemilikan voice per sumber, sustain/pitch bend per channel, panic MIDI, node gain MIDI, cache `v3` |
 
 ---
 

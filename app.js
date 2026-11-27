@@ -23,6 +23,7 @@
     'z', 'x', 'c', 'v', 'b', 'n', 'm'
   ];
   const LETTER_SET = new Set(LETTER_SEQUENCE);
+  const DEFAULT_SOURCE = 'local';
 
   const el = {
     status: document.getElementById('status'),
@@ -43,21 +44,49 @@
     keys: document.getElementById('keys'),
     scrollControl: document.getElementById('scrollControl'),
     scrollRange: document.getElementById('scrollRange'),
-    toast: document.getElementById('toast')
+    toast: document.getElementById('toast'),
+    midiChip: document.getElementById('midiChip'),
+    midiChipText: document.getElementById('midiChipText'),
+    midiBtn: document.getElementById('midiBtn'),
+    midiControls: document.getElementById('midiControls'),
+    midiInput: document.getElementById('midiInput'),
+    midiChannel: document.getElementById('midiChannel'),
+    midiPanicBtn: document.getElementById('midiPanicBtn'),
+    midiNote: document.getElementById('midiNote')
   };
 
   const keyEls = new Map();
   const voices = new Map();
-  const sustained = new Set();
+  const sustained = new Map();
   const activePointers = new Map();
   const heldKeys = new Map();
   const shortcutByMidi = new Map();
+  const heldNotes = new Set();
+  const noteOwners = new Map();
+  const ownersByMidi = new Map();
+  const keyHeldBy = new Map();
+  const clickTimers = new Map();
+
+  const midi = {
+    access: null,
+    enabled: false,
+    pending: false,
+    inputId: 'all',
+    channel: 'omni',
+    inputs: new Map(),
+    channelSustain: new Map(),
+    bend: new Map(),
+    volume: 1,
+    expression: 1,
+    noteTimer: null
+  };
 
   let ctx = null;
   let voiceBus = null;
   let dryGain = null;
   let wetGain = null;
   let masterGain = null;
+  let midiVolumeGain = null;
   let buffers = new Map();
   let sampleList = [];
   let ready = false;
@@ -71,6 +100,7 @@
   let demoPlaying = false;
   let pedalBeforeDemo = false;
   let toastTimer = null;
+  let lastNotReadyToast = 0;
   let letterMaps = { whiteMap: new Map(), blackMap: new Map() };
 
   const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
@@ -159,6 +189,7 @@
     dryGain = ctx.createGain();
     wetGain = ctx.createGain();
     masterGain = ctx.createGain();
+    midiVolumeGain = ctx.createGain();
     const convolver = ctx.createConvolver();
     const compressor = ctx.createDynamicsCompressor();
 
@@ -166,6 +197,7 @@
     dryGain.gain.value = 0.96;
     wetGain.gain.value = el.reverbToggle.checked ? 0.13 : 0;
     masterGain.gain.value = (Number(el.volume.value) / 100) * 0.9;
+    midiVolumeGain.gain.value = midi.volume * midi.expression;
     compressor.threshold.value = -14;
     compressor.knee.value = 18;
     compressor.ratio.value = 3;
@@ -174,7 +206,7 @@
 
     voiceBus.connect(dryGain).connect(masterGain);
     voiceBus.connect(convolver).connect(wetGain).connect(masterGain);
-    masterGain.connect(compressor).connect(ctx.destination);
+    masterGain.connect(midiVolumeGain).connect(compressor).connect(ctx.destination);
 
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     return true;
@@ -244,80 +276,393 @@
     return best;
   }
 
-  function setKeyActive(midi, active) {
-    const key = keyEls.get(midi);
-    if (key) key.classList.toggle('is-active', active);
+  function showNotReadyToast() {
+    const now = performance.now();
+    if (now - lastNotReadyToast < 2500) return;
+    lastNotReadyToast = now;
+    showToast('Sample piano belum siap. Tunggu status "Siap".');
   }
 
-  function noteOn(midi, velocity = 0.82) {
+  function refreshKeyVisual(note) {
+    const key = keyEls.get(note);
+    if (key) key.classList.toggle('is-active', heldNotes.has(note));
+  }
+
+  function refreshAllKeyVisuals() {
+    for (const note of keyEls.keys()) refreshKeyVisual(note);
+  }
+
+  function effectiveSustain(channel) {
+    return sustainOn || (channel != null && midi.channelSustain.get(channel) === true);
+  }
+
+  function clearOwner(note, ownerKey = ownersByMidi.get(note)) {
+    if (!ownerKey) return;
+    if (ownersByMidi.get(note) === ownerKey) ownersByMidi.delete(note);
+    const owner = noteOwners.get(ownerKey);
+    if (owner && owner.midi === note) noteOwners.delete(ownerKey);
+  }
+
+  function noteOn(note, velocity = 0.82, origin = DEFAULT_SOURCE, options = {}) {
+    if (!Number.isFinite(note) || note < MIDI_MIN || note > MIDI_MAX) return false;
     if (!ready) {
-      if (!loading) showToast('Sample piano belum siap. Tunggu status "Siap".');
-      return;
+      if (!loading) showNotReadyToast();
+      return false;
     }
-    if (!ensureAudio()) return;
-    if (voices.has(midi)) releaseVoice(midi, 0.05);
+    if (!ensureAudio()) return false;
 
-    const sample = nearestSample(midi);
-    if (!sample) return;
+    const ownerKey = `${origin}|${note}|${options.channel ?? 'local'}|${options.portId ?? ''}`;
+    const currentKey = ownersByMidi.get(note);
+    const currentOwner = currentKey ? noteOwners.get(currentKey) : null;
+    if (currentOwner && currentOwner.origin !== origin) return false;
+    if (voices.has(note)) releaseVoice(note, 0.05);
 
-    const now = ctx.currentTime;
+    const sample = nearestSample(note);
+    if (!sample) return false;
+
+    const when = Number.isFinite(options.when) ? Math.max(options.when, ctx.currentTime) : ctx.currentTime;
     const source = ctx.createBufferSource();
     const gain = ctx.createGain();
     const peak = clamp(Math.pow(velocity, 1.25) * 0.95, 0.02, 1);
+    const bend = midi.bend.get(options.channel) || 0;
+    const baseRate = Math.pow(2, (note - sample.midi) / 12);
 
     source.buffer = sample.buffer;
-    source.playbackRate.value = Math.pow(2, (midi - sample.midi) / 12);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(peak, now + 0.006);
+    source.playbackRate.value = baseRate * Math.pow(2, bend / 12);
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.exponentialRampToValueAtTime(peak, when + 0.006);
     source.connect(gain).connect(voiceBus);
-    source.start(now);
+    source.start(when);
 
-    const voice = { source, gain };
-    voices.set(midi, voice);
-    sustained.delete(midi);
-    source.onended = () => { if (voices.get(midi) === voice) voices.delete(midi); };
-    setKeyActive(midi, true);
+    const voice = {
+      source, gain, baseRate, origin,
+      channel: options.channel ?? null,
+      portId: options.portId || null
+    };
+    voices.set(note, voice);
+    sustained.delete(note);
+    heldNotes.add(note);
+    noteOwners.set(ownerKey, { midi: note, origin, channel: voice.channel, portId: voice.portId });
+    ownersByMidi.set(note, ownerKey);
+    source.onended = () => {
+      if (voices.get(note) === voice) {
+        voices.delete(note);
+        sustained.delete(note);
+        clearOwner(note);
+      }
+    };
+    refreshKeyVisual(note);
+    return true;
   }
 
-  function releaseVoice(midi, forcedDuration = 0) {
-    const voice = voices.get(midi);
-    if (!voice) return;
-    voices.delete(midi);
-    sustained.delete(midi);
+  function releaseVoice(note, forcedDuration = 0) {
+    const voice = voices.get(note);
+    if (!voice) {
+      sustained.delete(note);
+      clearOwner(note);
+      refreshKeyVisual(note);
+      return;
+    }
+    voices.delete(note);
+    sustained.delete(note);
 
     const now = ctx.currentTime;
-    const duration = forcedDuration || (sustainOn ? 1.8 : 0.24);
+    const duration = forcedDuration || (effectiveSustain(voice.channel) ? 1.8 : 0.24);
     voice.gain.gain.cancelScheduledValues(now);
     voice.gain.gain.setValueAtTime(Math.max(voice.gain.gain.value, 0.0001), now);
     voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
     try { voice.source.stop(now + duration + 0.03); } catch (_) { /* sudah berhenti */ }
-    setKeyActive(midi, false);
+    clearOwner(note);
+    refreshKeyVisual(note);
   }
 
-  function noteOff(midi) {
-    if (!voices.has(midi)) return;
-    if (sustainOn) {
-      sustained.add(midi);
-      setKeyActive(midi, false);
-      return;
+  function noteOff(note, origin = DEFAULT_SOURCE, options = {}) {
+    const ownerKey = ownersByMidi.get(note);
+    if (!ownerKey) return;
+    const owner = noteOwners.get(ownerKey);
+    if (!owner || owner.origin !== origin) return;
+    if (options.channel != null && owner.channel !== options.channel) return;
+    if (options.portId && owner.portId !== options.portId) return;
+
+    heldNotes.delete(note);
+    if (effectiveSustain(owner.channel)) {
+      sustained.set(note, { origin, channel: owner.channel, portId: owner.portId });
+    } else {
+      releaseVoice(note);
     }
-    releaseVoice(midi);
+    clearOwner(note, ownerKey);
+    refreshKeyVisual(note);
   }
 
-  function releaseAll(forcedDuration = 0.1) {
-    for (const midi of [...voices.keys()]) releaseVoice(midi, forcedDuration);
-    sustained.clear();
-    activePointers.clear();
-    heldKeys.clear();
-    enterMidi = null;
+  function matchesVoice(entry, options) {
+    return (!options.origin || entry.origin === options.origin) &&
+      (options.channel == null || entry.channel === options.channel) &&
+      (!options.portId || entry.portId === options.portId);
+  }
+
+  function releaseAll(forcedDuration = 0.1, options = {}) {
+    const released = [];
+    for (const [note, voice] of [...voices]) {
+      if (!matchesVoice(voice, options)) continue;
+      released.push(note);
+      releaseVoice(note, forcedDuration);
+    }
+    for (const note of released) heldNotes.delete(note);
+    for (const [note, entry] of [...sustained]) {
+      if (matchesVoice(entry, options)) { sustained.delete(note); heldNotes.delete(note); }
+    }
+    const global = !options.origin && options.channel == null && !options.portId;
+    for (const note of [...heldNotes]) {
+      const ownerKey = ownersByMidi.get(note);
+      const owner = ownerKey ? noteOwners.get(ownerKey) : null;
+      if (global || (owner && matchesVoice(owner, options))) heldNotes.delete(note);
+    }
+    if (global) {
+      activePointers.clear();
+      heldKeys.clear();
+      keyHeldBy.clear();
+      clickTimers.forEach(timer => clearTimeout(timer));
+      clickTimers.clear();
+      enterMidi = null;
+    }
+    refreshAllKeyVisuals();
   }
 
   function setSustain(active) {
     sustainOn = active;
     el.pedalBtn.setAttribute('aria-pressed', String(active));
     if (!active) {
-      for (const midi of [...sustained]) releaseVoice(midi);
+      for (const note of [...sustained]) releaseVoice(note);
     }
+  }
+
+  function midiIsSupported() {
+    return typeof navigator !== 'undefined' &&
+      typeof navigator.requestMIDIAccess === 'function' &&
+      window.isSecureContext !== false;
+  }
+
+  function setMidiChip(text, state = 'idle') {
+    el.midiChipText.textContent = text;
+    el.midiChip.classList.toggle('is-active', state === 'active');
+    el.midiChip.classList.toggle('is-error', state === 'error');
+  }
+
+  function updateMidiButton() {
+    const supported = midiIsSupported();
+    el.midiBtn.disabled = !supported && !midi.enabled;
+    el.midiBtn.classList.toggle('is-connected', midi.enabled);
+    el.midiBtn.textContent = midi.enabled ? 'Putuskan MIDI' : 'Hubungkan MIDI';
+    if (!supported && !midi.enabled) {
+      el.midiBtn.title = window.isSecureContext === false
+        ? 'Web MIDI memerlukan HTTPS atau localhost.'
+        : 'Browser ini tidak mendukung Web MIDI (mis. Safari / iOS).';
+    } else {
+      el.midiBtn.removeAttribute('title');
+    }
+  }
+
+  function midiTimeToAudioTime(timestamp) {
+    if (!ctx) return null;
+    let ms = Number.isFinite(timestamp) && timestamp > 0 ? timestamp : performance.now();
+    if (Math.abs(ms - performance.now()) > 60000) ms = performance.now();
+    return ctx.currentTime + clamp((ms - performance.now()) / 1000, 0, 0.05);
+  }
+
+  function applyMidiVolume() {
+    if (!midiVolumeGain || !ctx) return;
+    midiVolumeGain.gain.setTargetAtTime(clamp(midi.volume * midi.expression, 0, 1), ctx.currentTime, 0.02);
+  }
+
+  function applyPitchBend(channel) {
+    if (!ctx) return;
+    const semitones = midi.bend.get(channel) || 0;
+    for (const voice of voices.values()) {
+      if (voice.channel !== channel) continue;
+      voice.source.playbackRate.setTargetAtTime(voice.baseRate * Math.pow(2, semitones / 12), ctx.currentTime, 0.015);
+    }
+  }
+
+  function showMidiNote(label) {
+    el.midiNote.textContent = label;
+    el.midiNote.hidden = false;
+    clearTimeout(midi.noteTimer);
+    midi.noteTimer = setTimeout(() => { el.midiNote.hidden = true; }, 900);
+  }
+
+  function releaseSustainedChannel(channel) {
+    for (const [note, entry] of [...sustained]) {
+      if (entry.channel === channel) releaseVoice(note);
+    }
+  }
+
+  function midiPanic(options = {}) {
+    releaseAll(options.immediate ? 0.01 : 0.05, { origin: 'midi', ...options });
+    if (options.channel != null) {
+      midi.channelSustain.delete(options.channel);
+      midi.bend.delete(options.channel);
+    } else if (!options.portId) {
+      midi.channelSustain.clear();
+      midi.bend.clear();
+    }
+    for (const voice of voices.values()) {
+      voice.source.playbackRate.setTargetAtTime(voice.baseRate, ctx ? ctx.currentTime : 0, 0.01);
+    }
+  }
+
+  function handleMidiCC(channel, cc, value, portId) {
+    if (cc === 64) {
+      midi.channelSustain.set(channel, value >= 64);
+      if (value < 64) releaseSustainedChannel(channel);
+      return;
+    }
+    if (cc === 7) { midi.volume = clamp(value / 127, 0, 1); applyMidiVolume(); return; }
+    if (cc === 11) { midi.expression = clamp(value / 127, 0, 1); applyMidiVolume(); return; }
+    if (cc === 120) { midiPanic({ channel, portId, immediate: true }); return; }
+    if (cc === 121) {
+      midi.bend.delete(channel);
+      midi.channelSustain.delete(channel);
+      releaseSustainedChannel(channel);
+      applyPitchBend(channel);
+      return;
+    }
+    if (cc === 123 || cc === 126 || cc === 127) midiPanic({ channel, portId });
+  }
+
+  function handleMidiMessage(event) {
+    const data = event.data;
+    if (!(data instanceof Uint8Array) || data.length < 2) return;
+    const portId = event.target && event.target.id ? event.target.id : null;
+    if (midi.inputId !== 'all' && portId !== midi.inputId) return;
+
+    const command = data[0] & 0xf0;
+    const channel = (data[0] & 0x0f) + 1;
+    if (midi.channel !== 'omni' && channel !== Number(midi.channel)) return;
+    if (command < 0x80 || command === 0xf0) return;
+
+    if (command === 0x90) {
+      const note = data[1];
+      if (note < MIDI_MIN || note > MIDI_MAX) return;
+      if (data[2] === 0) { noteOff(note, 'midi', { channel, portId }); return; }
+      if (noteOn(note, data[2] / 127, 'midi', { channel, portId, when: midiTimeToAudioTime(event.timeStamp) })) {
+        showMidiNote(`MIDI · ${midiToName(note)} · vel ${data[2]}`);
+      }
+      return;
+    }
+    if (command === 0x80) {
+      noteOff(data[1], 'midi', { channel, portId });
+      return;
+    }
+    if (command === 0xb0) {
+      handleMidiCC(channel, data[1], data[2], portId);
+      return;
+    }
+    if (command === 0xe0) {
+      const value14 = (data[2] << 7) | data[1];
+      midi.bend.set(channel, ((value14 - 8192) / 8192) * 2);
+      applyPitchBend(channel);
+    }
+  }
+
+  function attachMidiInputs() {
+    if (!midi.access) return;
+    for (const port of midi.access.inputs.values()) {
+      const selected = midi.inputId === 'all' || port.id === midi.inputId;
+      port.onmidimessage = selected && port.state === 'connected' ? handleMidiMessage : null;
+    }
+  }
+
+  function refreshMidiPorts() {
+    if (!midi.access) return;
+    midi.inputs = new Map([...midi.access.inputs.values()]
+      .filter(port => port.type === 'input' && port.state === 'connected')
+      .map(port => [port.id, port]));
+    const select = el.midiInput;
+    select.innerHTML = '';
+    const all = document.createElement('option');
+    all.value = 'all';
+    all.textContent = midi.inputs.size ? 'Semua perangkat' : 'Belum ada perangkat';
+    select.append(all);
+    for (const port of midi.inputs.values()) {
+      const option = document.createElement('option');
+      option.value = port.id;
+      option.textContent = [port.name || 'Keyboard MIDI', port.manufacturer].filter(Boolean).join(' · ');
+      select.append(option);
+    }
+    if (midi.inputId !== 'all' && !midi.inputs.has(midi.inputId)) midi.inputId = 'all';
+    select.value = midi.inputId;
+    attachMidiInputs();
+    setMidiChip(
+      midi.inputs.size ? `MIDI aktif · ${midi.inputs.size} input` : 'MIDI aktif · belum ada perangkat',
+      'active'
+    );
+  }
+
+  function handleMidiStateChange(event) {
+    const port = event.port;
+    if (port && port.type === 'input' && port.state !== 'connected') {
+      midiPanic({ portId: port.id, immediate: true });
+    }
+    refreshMidiPorts();
+  }
+
+  async function enableMidi() {
+    if (!midiIsSupported() || midi.pending) return;
+    midi.pending = true;
+    el.midiBtn.disabled = true;
+    ensureAudio();
+    setMidiChip('MIDI: meminta izin…', 'idle');
+    try {
+      const access = await navigator.requestMIDIAccess({ sysex: false });
+      midi.access = access;
+      midi.enabled = true;
+      access.onstatechange = handleMidiStateChange;
+      refreshMidiPorts();
+      el.midiControls.hidden = false;
+      updateMidiButton();
+      if (!midi.inputs.size) showToast('MIDI aktif. Hubungkan keyboard lalu tekan sebuah note.');
+    } catch (error) {
+      const denied = error && (error.name === 'NotAllowedError' || error.name === 'SecurityError');
+      setMidiChip(denied ? 'MIDI: izin ditolak' : 'MIDI: gagal tersambung', 'error');
+      showToast(denied
+        ? 'Izin MIDI ditolak. Aktifkan lagi lewat pengaturan browser lalu klik Hubungkan MIDI.'
+        : 'Gagal membuka akses MIDI. Periksa izin browser dan koneksi perangkat.');
+    } finally {
+      midi.pending = false;
+      el.midiBtn.disabled = false;
+      updateMidiButton();
+    }
+  }
+
+  function disableMidi() {
+    midiPanic({ immediate: true });
+    for (const port of midi.inputs.values()) port.onmidimessage = null;
+    if (midi.access) midi.access.onstatechange = null;
+    midi.access = null;
+    midi.enabled = false;
+    midi.inputId = 'all';
+    midi.channel = 'omni';
+    midi.channelSustain.clear();
+    midi.bend.clear();
+    midi.volume = 1;
+    midi.expression = 1;
+    applyMidiVolume();
+    clearTimeout(midi.noteTimer);
+    el.midiNote.hidden = true;
+    el.midiControls.hidden = true;
+    el.midiChannel.value = 'omni';
+    midi.inputs.clear();
+    setMidiChip('MIDI: tidak tersedia', 'idle');
+    updateMidiButton();
+  }
+
+  function initMidi() {
+    updateMidiButton();
+    if (!midiIsSupported()) {
+      setMidiChip('MIDI: tidak didukung browser ini', 'idle');
+      return;
+    }
+    setMidiChip('MIDI: belum tersambung', 'idle');
   }
 
   function setKeyFocus(midi) {
@@ -404,6 +749,7 @@
 
     focusedMidi = clamp(focusedMidi, from, to);
     setKeyFocus(focusedMidi);
+    refreshAllKeyVisuals();
     updateScrollControl();
   }
 
@@ -447,7 +793,7 @@
     demoTimers = [];
     demoPlaying = false;
     el.demoBtn.textContent = 'Putar demo';
-    releaseAll();
+    releaseAll(0.1, { origin: 'demo' });
     setSustain(pedalBeforeDemo);
   }
 
@@ -468,8 +814,8 @@
 
     phrase.forEach(([name, start, duration]) => {
       const midi = noteToMidi(name);
-      demoTimers.push(setTimeout(() => noteOn(midi, 0.84), start * 1000));
-      demoTimers.push(setTimeout(() => noteOff(midi), (start + duration) * 1000));
+      demoTimers.push(setTimeout(() => noteOn(midi, 0.84, 'demo'), start * 1000));
+      demoTimers.push(setTimeout(() => noteOff(midi, 'demo'), (start + duration) * 1000));
     });
     demoTimers.push(setTimeout(stopDemo, 5200));
   }
@@ -496,6 +842,21 @@
       }
     });
 
+    el.midiBtn.addEventListener('click', () => {
+      if (midi.enabled) disableMidi();
+      else enableMidi();
+    });
+    el.midiInput.addEventListener('change', () => {
+      midi.inputId = el.midiInput.value;
+      midiPanic();
+      attachMidiInputs();
+    });
+    el.midiChannel.addEventListener('change', () => {
+      midi.channel = el.midiChannel.value;
+      midiPanic();
+    });
+    el.midiPanicBtn.addEventListener('click', () => midiPanic());
+
     document.querySelectorAll('[data-view]').forEach(button => {
       button.addEventListener('click', () => setView(button.dataset.view));
     });
@@ -515,7 +876,7 @@
       const midi = Number(key.dataset.midi);
       activePointers.set(event.pointerId, midi);
       setKeyFocus(midi);
-      noteOn(midi, velocityFromEvent(event, key));
+      noteOn(midi, velocityFromEvent(event, key), 'pointer');
     });
 
     el.keys.addEventListener('pointermove', event => {
@@ -525,16 +886,16 @@
       if (!key || !el.keys.contains(key)) return;
       const midi = Number(key.dataset.midi);
       if (activePointers.get(event.pointerId) === midi) return;
-      noteOff(activePointers.get(event.pointerId));
+      noteOff(activePointers.get(event.pointerId), 'pointer');
       activePointers.set(event.pointerId, midi);
       setKeyFocus(midi);
-      noteOn(midi, velocityFromEvent(event, key));
+      noteOn(midi, velocityFromEvent(event, key), 'pointer');
     });
 
     ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(type => {
       el.keys.addEventListener(type, event => {
         if (!activePointers.has(event.pointerId)) return;
-        noteOff(activePointers.get(event.pointerId));
+        noteOff(activePointers.get(event.pointerId), 'pointer');
         activePointers.delete(event.pointerId);
       });
     });
@@ -544,15 +905,22 @@
       const key = event.target.closest('.key');
       if (!key) return;
       const midi = Number(key.dataset.midi);
-      noteOn(midi, 0.82);
-      setTimeout(() => noteOff(midi), 320);
+      const previousTimer = clickTimers.get(midi);
+      if (previousTimer) clearTimeout(previousTimer);
+      noteOn(midi, 0.82, 'click');
+      clickTimers.set(midi, setTimeout(() => {
+        clickTimers.delete(midi);
+        noteOff(midi, 'click');
+      }, 320));
     });
 
     document.addEventListener('keydown', event => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target;
       const typing = target instanceof HTMLElement &&
-        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+        (target.tagName === 'INPUT' || target.tagName === 'SELECT' ||
+          target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (typing) return;
 
       if (event.code === 'Space') {
         const active = document.activeElement;
@@ -561,7 +929,6 @@
         if (!sustainOn) setSustain(true);
         return;
       }
-      if (typing) return;
 
       if (event.code === 'Backquote') {
         event.preventDefault();
@@ -580,7 +947,7 @@
           event.preventDefault();
           if (enterMidi === null) {
             enterMidi = focusedMidi;
-            noteOn(enterMidi, 0.82);
+            noteOn(enterMidi, 0.82, 'enter');
           }
           return;
         }
@@ -596,12 +963,20 @@
         if (midi === null || midi === undefined) return;
         heldKeys.set(character, midi);
         setKeyFocus(midi);
-        noteOn(midi, 0.82);
+        const aliases = keyHeldBy.get(midi);
+        if (aliases) { aliases.add(character); return; }
+        keyHeldBy.set(midi, new Set([character]));
+        noteOn(midi, 0.82, 'keyboard');
       }
     });
 
     document.addEventListener('keyup', event => {
+      const target = event.target;
+      const typing = target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' || target.tagName === 'SELECT' ||
+          target.tagName === 'TEXTAREA' || target.isContentEditable);
       if (event.code === 'Space') {
+        if (typing) return;
         const active = document.activeElement;
         if (active instanceof HTMLButtonElement && active !== el.pedalBtn) return;
         event.preventDefault();
@@ -609,21 +984,27 @@
         return;
       }
       if (event.key === 'Enter' && enterMidi !== null) {
-        noteOff(enterMidi);
+        noteOff(enterMidi, 'enter');
         enterMidi = null;
         return;
       }
       const character = event.key.toLowerCase();
-      if (heldKeys.has(character)) {
-        const midi = heldKeys.get(character);
-        heldKeys.delete(character);
-        noteOff(midi);
+      if (!heldKeys.has(character)) return;
+      const midi = heldKeys.get(character);
+      heldKeys.delete(character);
+      const aliases = keyHeldBy.get(midi);
+      if (aliases) {
+        aliases.delete(character);
+        if (aliases.size) return;
+        keyHeldBy.delete(midi);
       }
+      noteOff(midi, 'keyboard');
     });
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         releaseAll();
+        midiPanic();
         setSustain(false);
       }
     });
@@ -636,6 +1017,7 @@
     else setView('88');
     updateOctaveLabel();
     bindEvents();
+    initMidi();
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
     }

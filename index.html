@@ -28,6 +28,11 @@
           <span class="status-bar" aria-hidden="true"><i id="loadBar"></i></span>
           <button id="retryBtn" class="retry-btn" type="button" hidden>Coba lagi</button>
         </div>
+        <div id="midiChip" class="midi-chip" role="status" aria-live="polite">
+          <span class="midi-dot" aria-hidden="true"></span>
+          <span id="midiChipText">MIDI: tidak tersedia</span>
+        </div>
+        <button id="midiBtn" class="btn btn-midi" type="button">Hubungkan MIDI</button>
         <button id="helpBtn" class="icon-btn" type="button" aria-expanded="false" aria-controls="helpPanel" aria-label="Tampilkan panduan keyboard"></button>
       </div>
     </header>
@@ -61,8 +66,9 @@
             <li><kbd>`</kbd> Tampilkan / sembunyikan label not</li>
             <li><kbd>−</kbd> / <kbd>=</kbd> Geser peta keyboard satu oktaf</li>
             <li><kbd>←</kbd> / <kbd>→</kbd> Pindah tuts saat area piano fokus, <kbd>Enter</kbd> memainkannya</li>
+            <li><strong>MIDI:</strong> klik <em>Hubungkan MIDI</em>, lalu mainkan keyboard digital. Suara tetap berasal dari sample di browser.</li>
           </ul>
-          <p class="help-note">Teklik bagian tengah tuts lebih pelan, dekat ujung bawah lebih keras.</p>
+          <p class="help-note">Teklik bagian tengah tuts lebih pelan, dekat ujung bawah lebih keras. Sustain keyboard (CC64) dan <kbd>Space</kbd> bisa dipakai bersamaan.</p>
         </div>
       </section>
 
@@ -103,6 +109,26 @@
           <input id="volume" type="range" min="0" max="100" value="78" aria-label="Volume">
         </div>
 
+        <div id="midiControls" class="control-group midi-group" hidden>
+          <span class="control-label">MIDI input</span>
+          <div class="midi-fields">
+            <label class="sr-only" for="midiInput">Perangkat MIDI</label>
+            <select id="midiInput"><option value="all">Semua perangkat</option></select>
+            <label class="sr-only" for="midiChannel">Channel MIDI</label>
+            <select id="midiChannel">
+              <option value="omni">Omni</option>
+              <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+              <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+              <option value="7">7</option><option value="8">8</option><option value="9">9</option>
+              <option value="10">10</option><option value="11">11</option><option value="12">12</option>
+              <option value="13">13</option><option value="14">14</option><option value="15">15</option>
+              <option value="16">16</option>
+            </select>
+            <button id="midiPanicBtn" class="btn btn-ghost" type="button">Panic</button>
+          </div>
+          <output id="midiNote" class="midi-note" aria-live="off" hidden></output>
+        </div>
+
         <div class="control-actions">
           <button id="demoBtn" class="btn btn-ghost" type="button">Putar demo</button>
           <button id="pedalBtn" class="btn btn-pedal" type="button" aria-pressed="false">
@@ -132,7 +158,7 @@
           <input id="scrollRange" type="range" min="0" max="100" value="0">
         </div>
 
-        <p id="hintText" class="hint">Klik tuts atau pakai huruf <kbd>Q</kbd>–<kbd>M</kbd> berurutan ke kanan. Tahan <kbd>Shift</kbd> untuk tuts hitam, <kbd>Space</kbd> untuk sustain. Saat area piano fokus, pakai <kbd>←</kbd> / <kbd>→</kbd> dan <kbd>Enter</kbd>.</p>
+        <p id="hintText" class="hint">Klik tuts atau pakai huruf <kbd>Q</kbd>–<kbd>M</kbd> berurutan ke kanan. Tahan <kbd>Shift</kbd> untuk tuts hitam, <kbd>Space</kbd> untuk sustain. Saat area piano fokus, pakai <kbd>←</kbd> / <kbd>→</kbd> dan <kbd>Enter</kbd>. Keyboard MIDI tersambung lewat tombol <em>Hubungkan MIDI</em> (HTTPS / localhost, Chrome · Edge · Firefox).</p>
       </section>
     </main>
 

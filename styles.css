@@ -175,6 +175,29 @@ a:hover { color: #f0cf9c; }
 .icon-btn::after { content: "?"; font-family: var(--serif); font-size: 15px; }
 .icon-btn:hover, .icon-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 
+.midi-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.midi-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #666b64; }
+.midi-chip.is-active { color: var(--ink); border-color: #4a5548; }
+.midi-chip.is-active .midi-dot { background: #8fc49b; box-shadow: 0 0 0 4px rgba(143, 196, 155, .12); }
+.midi-chip.is-error { color: var(--danger); border-color: #57342e; }
+.midi-chip.is-error .midi-dot { background: var(--danger); box-shadow: 0 0 0 4px rgba(229, 139, 118, .12); }
+
+.btn-midi { color: var(--accent); border-color: #554734; }
+.btn-midi.is-connected { border-color: var(--accent); background: var(--accent-soft); }
+.btn-midi:disabled { opacity: .45; cursor: not-allowed; transform: none; border-color: var(--line); color: var(--muted); background: transparent; }
+
 /* Intro */
 
 .intro { padding: clamp(32px, 6vw, 74px) 0 clamp(24px, 4vw, 44px); max-width: 800px; }
@@ -298,6 +321,31 @@ input[type="range"] { width: 100%; height: 18px; margin: 0; background: transpar
 .btn-pedal[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .btn-pedal[aria-pressed="true"] .pedal-led { background: var(--accent); box-shadow: 0 0 10px rgba(214, 173, 112, .8); }
 
+.midi-group[hidden] { display: none; }
+.midi-fields { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.midi-fields select {
+  min-height: 34px;
+  max-width: 190px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-soft);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+.midi-fields select:disabled { opacity: .45; cursor: not-allowed; }
+.midi-fields .btn { min-height: 34px; }
+.midi-note {
+  padding: 3px 8px;
+  border: 1px solid #4a5548;
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.midi-note[hidden] { display: none; }
+
 /* Piano case */
 
 .piano-section { padding-bottom: 26px; }
@@ -401,6 +449,10 @@ body.no-labels .key-label, body.no-labels .key-shortcut { display: none; }
 
 /* Responsive */
 
+@media (max-width: 900px) {
+  .topbar-right { flex-wrap: wrap; justify-content: flex-end; }
+}
+
 @media (min-width: 900px) {
   .control-bar { gap: 32px; }
   .keys { height: clamp(240px, 30vh, 300px); }
@@ -409,9 +461,13 @@ body.no-labels .key-label, body.no-labels .key-shortcut { display: none; }
 @media (max-width: 620px) {
   .shell { padding: 16px 14px 30px; }
   .topbar { align-items: flex-start; }
+  .topbar-right { flex-wrap: wrap; justify-content: flex-end; }
   .brand-sub { font-size: 10px; }
   .status { min-height: 30px; padding: 0 9px; font-size: 10px; }
   .status-bar { width: 30px; }
+  .midi-chip { min-height: 30px; padding: 0 9px; font-size: 10px; }
+  .btn-midi { min-height: 30px; padding: 0 9px; font-size: 11px; }
+  .midi-fields select { min-height: 30px; max-width: 100%; font-size: 11px; }
   .intro { padding: 34px 0 26px; }
   .control-bar { gap: 16px 22px; align-items: center; }
   .control-actions { width: 100%; margin-left: 0; }
